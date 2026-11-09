@@ -1,0 +1,48 @@
+# Local infrastructure.
+#
+#   make run                 → spring-boot-docker-compose starts `db` (the only un-profiled service) and wires the
+#                              datasource; you rarely start it by hand.
+#   make up                  → the app image too (profile `full`), for checking the container end to end.
+#
+# Bricks add their services through `include:` (bricks/README.md).
+#
+# Tests never use this file: Testcontainers gives each fork its own PostgreSQL.
+services:
+  db:
+    image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: services/app/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      APP_NAME: ${APP_NAME:-spring-template}
+      APP_ENV: local
+      SPRING_PROFILES_ACTIVE: prod
+      # Reach the database by its compose service name, not localhost.
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-app}
+      DB_USERNAME: ${POSTGRES_USER:-app}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    restart: unless-stopped
+
+volumes:
+  db-data:

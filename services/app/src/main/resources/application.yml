@@ -1,0 +1,113 @@
+spring:
+  application:
+    name: ${APP_NAME:spring-template}
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/app}
+    username: ${DB_USERNAME:app}
+    password: ${DB_PASSWORD:app}
+    hikari:
+      pool-name: app-cp
+      # Keep replicas × pool size below Postgres max_connections (50 in deploy/compose.prod.yml).
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Schema is owned by Liquibase; Hibernate only validates it matches the entities.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+
+  cache:
+    type: caffeine
+    # Declare the cache names up front so @Cacheable misses fail fast instead of creating caches lazily.
+    cache-names: default
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=5m
+
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 2000
+            read-timeout: 5000
+      circuitbreaker:
+        # Wrap every Feign call in a Resilience4j circuit breaker; enables per-client fallbacks.
+        enabled: true
+
+  # spring-boot-docker-compose starts compose.yml automatically on `bootRun` (only services without a profile).
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start-and-stop
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+
+management:
+  server:
+    # Same port as the app locally. Production sets MANAGEMENT_PORT=8081, which compose never publishes and Caddy
+    # never proxies, so /actuator/* stays private while /version on the app port remains public.
+    port: ${MANAGEMENT_PORT:${SERVER_PORT:8080}}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      # No security is wired in this template, so expose details directly. Switch to when-authorized once you add auth.
+      show-details: always
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+  metrics:
+    tags:
+      # Every series carries these; the dashboard's $env variable and Alloy's external_labels rely on them.
+      application: ${APP_NAME:spring-template}
+      env: ${APP_ENV:local}
+    distribution:
+      slo:
+        # Fixed buckets instead of percentile histograms: enough for p50/p95/p99 panels, few series.
+        http.server.requests: 100ms,250ms,500ms,1s,2s,5s
+
+# Build identity: CI bakes APP_VERSION/APP_REVISION into the image; /version and app_build_info read them.
+app:
+  info:
+    version: ${APP_VERSION:local}
+    revision: ${APP_REVISION:dev}
+
+info:
+  app:
+    version: ${APP_VERSION:local}
+    revision: ${APP_REVISION:dev}
+
+# Circuit-breaker defaults for every Resilience4j instance; Feign clients pick these up by client name.
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 5
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    com.example.company: DEBUG

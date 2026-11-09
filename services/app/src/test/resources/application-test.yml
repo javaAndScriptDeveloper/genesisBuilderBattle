@@ -1,0 +1,12 @@
+# Test profile. The datasource comes from Testcontainers via @ServiceConnection (see TestcontainersConfiguration),
+# so nothing here points at a database; only what differs from application.yml is listed.
+spring:
+  docker:
+    compose:
+      # Tests own their PostgreSQL through Testcontainers; never start compose.yml from a test run.
+      enabled: false
+
+logging:
+  level:
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN
